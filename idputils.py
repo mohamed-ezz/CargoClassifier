@@ -2,7 +2,6 @@ import cv,cv2
 
 def imshow(img,title=''):
 	cv2.imshow(title,img)
-	cv2.imshow(title,img)
 	disp()
 	
 def disp():
