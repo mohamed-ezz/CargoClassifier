@@ -323,16 +323,14 @@ if __name__ == '__main__':
 #############
 	import math
 	def evaluate(weight_vector):
-		a,b,c,d=weight_vector
-		#return -1*(a+b+c+d-531)**2
-		return math.sin(a)*math.sin(b)*(a+b)
+		
 		cfg.Y_KMEANS_SCALE, cfg.X_KMEANS_SCALE, cfg.DEPTH_KMEANS_SCALE, cfg.COLOR_KMEANS_SCALE = weight_vector
 		extractor = KmeansExtractor(args.input_dir, args.output_dir)
 		predicted_csv = extractor.extractAllObjects() 
 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
 		return best_score
 
-	inits = [[2,1,1,1],[1,1,1,1],
+	inits = [[1,1,1,1],
 			 [1,0,0,0],
 			 [0,1,0,0],
 			 [0,0,1,0],
