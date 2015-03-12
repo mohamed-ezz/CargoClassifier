@@ -2,7 +2,7 @@
 
 """
 This is a Standalone Labeling tool suitable for defining a bounding box(es) on objects in an image.
-Usage: segmentation_labeler.py /absolute/dir/of/images/to/label/
+Usage: segmentation_labeler.py /absolute/input_dir/of/images/to/label/
 
 You point the the tool to a directory containing images, all images in that directory tree will be shown
 and the user/labeler should draw multiple rectangles (by dragging) on the desired objects.
@@ -71,16 +71,16 @@ def on_mouse(event, x, y, flags, image):
 		print 'MOUSE DRAW STATE MACHINE CORRUPTED. IN UNKNOWN STATE NOW'
 
 if len(sys.argv) < 2:
-	print "Usage: labeler.py /absolute/dir/of/images/to/label/"
+	print "Usage: labeler.py /absolute/input_dir/of/images/to/label/"
 	exit(1)
 
-dir = sys.argv[1]
-if dir.endswith('/'):
-	dir = dir[:-1]
+input_dir = sys.argv[1]
+if input_dir.endswith('/'):
+	input_dir = input_dir[:-1]
 
-print 'Source dir set to : ',dir
+print 'Source input_dir set to : ',input_dir
 
-output_filename = os.path.join(dir,'segmentation_labels_'+str(int(time()))+'.csv')
+output_filename = os.path.join(input_dir,'segmentation_labels_'+str(int(time()))+'.csv')
 outfile = file(output_filename, 'a')
 csv_writer = csv.writer(outfile, delimiter=",", quoting=csv.QUOTE_NONE)
 csv_writer.writerow(["image_id", "box_id", "y1", "x1", "y2", "x2"])
@@ -88,13 +88,13 @@ csv_writer.writerow(["image_id", "box_id", "y1", "x1", "y2", "x2"])
 
 try:
 	cv2.namedWindow(WINDOW_NAME)
-	for root, dirnames, filenames in os.walk(dir):
+	for root, dirnames, filenames in os.walk(input_dir):
 		for filename in filenames:
 			if not filename.endswith('_COLOR.bmp'):
 				continue
 			print filename
 			
-			prefix = filename.split('_')[0]
+			prefix = idputils.get_filename_prefix(filename)
 			colorname = os.path.join(root,filename)
 			colorimage = cv2.imread(colorname)
 			while True:

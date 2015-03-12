@@ -1,8 +1,8 @@
 #!/Users/Mohamed.Ezz/.virtualenvs/idp/bin/python
 
-"""
+helptext="""
 This is a Standalone Labeling tool suitable for 2-class classification labels.
-Usage: labeler.py /absolute/dir/of/images/to/label/
+Usage: labeler.py /absolute/input_dir/of/images/to/label/
 
 You point the the tool to a directory containing images, all images in that directory tree will be shown
 and the user/labeler should press LEFT ARROW or RIGHT ARROW. Based on the pressed key, the image (along with 
@@ -18,60 +18,79 @@ Images are assumed to be in pairs, color and depth image, name like this:
 ##########_DEPTH.png
 ...etc
 
+If there are no Depth images, it's no problem.
 When finished labeling, press ESC
 """
 
 import sys, os
 import cv,cv2,numpy as np
 import shutil
+import idputils
+import argparse
 
-if len(sys.argv) < 2:
-	print "Usage: labeler.py /absolute/dir/of/images/to/label/"
-	exit(1)
-
-dir = sys.argv[1]
-if dir.endswith('/'):
-	dir = dir[:-1]
-
-print 'Source dir set to : ',dir
-
-leftdir  = os.path.join(os.path.dirname(dir),'LEFT')
-if not os.path.exists(leftdir): os.makedirs(leftdir)
-rightdir = os.path.join(os.path.dirname(dir),'RIGHT')
-if not os.path.exists(rightdir): os.makedirs(rightdir)
+parser = argparse.ArgumentParser(description=helptext,formatter_class=argparse.RawTextHelpFormatter)
+parser.add_argument("-i",dest="input_dir",required=True,help="The directory containing the images to be labeled. Also the directory that will contain the output folders.")
+args = parser.parse_args()
 
 
-for root, dirnames, filenames in os.walk(dir):
+input_dir = args.input_dir
+if input_dir.endswith('/'):
+	input_dir = input_dir[:-1]
+
+print 'Source input_dir set to : ',input_dir
+
+
+for root, dirnames, filenames in os.walk(input_dir):
+	if root != input_dir: #DONOT traverse the dir tree, only the root.
+		continue 
 	for filename in filenames:
-		if not filename.endswith('_COLOR.bmp'):
+		if idputils.get_filename_type(filename) != 'COLOR':
 			continue
-		print filename
 		
-		prefix = filename.split('_')[0]
+		prefix = idputils.get_filename_prefix(filename)
 		colorname = os.path.join(root,filename)
-		depthname = os.path.join(root,prefix+'_DEPTH.png')
+		depthname = idputils.to_depth_filename(colorname)
 		
 		colorimage = cv2.imread(colorname)
-		cv2.imshow('Please press Left or Right arrow', colorimage)
+		cv2.imshow('Please press a key', colorimage)
 		keycode = cv2.waitKey(0)
-		if keycode == 63234: #LEFT ARROW
-			print 'Copying',filename,'to',leftdir,'...'
-			shutil.copy(colorname, leftdir)
-			os.remove(colorname)
-			shutil.copy(depthname, leftdir)
-			os.remove(depthname)
-
-		elif keycode == 63235: #RIGHT ARROW
-			print 'Copying',filename,'to',rightdir,'...'
-			shutil.copy(colorname, rightdir)
-			os.remove(colorname)
-			shutil.copy(depthname, rightdir)
-			os.remove(depthname)
-		elif keycode == 27: #ESC key
+		
+		if keycode == 27: #ESC key
 			cv2.destroyAllWindows()
 			exit(0)
 		else:
-			pass #DO NOTHING ABOUT THE SHOWN IMAGE
+			dirname = 'KEYCODE_%i' % keycode
+			dirname  = os.path.join(input_dir, dirname) #append full dir path
+			if not os.path.exists(dirname):
+				os.makedirs(dirname)
+			print 'Copying files for',prefix,'to',dirname
+			shutil.copy(colorname, dirname)
+			os.remove(colorname)
+			if os.path.exists(depthname):
+				shutil.copy(depthname, dirname)
+				os.remove(depthname)
+
+# 		if keycode == 63234: #LEFT ARROW
+# 			print 'Copying',filename,'to',leftdir,'...'
+# 			shutil.copy(colorname, leftdir)
+# 			os.remove(colorname)
+# 			if os.path.exists(depthname):
+# 				shutil.copy(depthname, leftdir)
+# 				os.remove(depthname)
+# 
+# 		elif keycode == 63235: #RIGHT ARROW
+# 			print 'Copying',filename,'to',rightdir,'...'
+# 			shutil.copy(colorname, rightdir)
+# 			os.remove(colorname)
+# 			if os.path.exists(depthname):
+# 				shutil.copy(depthname, rightdir)
+# 				os.remove(depthname)
+# 				
+# 		elif keycode == 27: #ESC key
+# 			cv2.destroyAllWindows()
+# 			exit(0)
+# 		else:
+# 			pass #DO NOTHING ABOUT THE SHOWN IMAGE
 		
 		
 		print 'KEYCODE: ',keycode
