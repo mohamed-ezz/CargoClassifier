@@ -345,7 +345,7 @@ if __name__ == '__main__':
 		while improved:
 			for direction in [[1,0,0,0] ,[0,1,0,0], [0,0,1,0], [0,0,0,1]]:
 				direction = np.array(direction)
-				new_weights = best_weights + 0.1 * direction
+				new_weights = best_weights + 0.3 * direction
 				new_score = evaluate(new_weights)
 				sys.stdout.write('#');sys.stdout.flush()
 				if new_score > best_score:
@@ -358,7 +358,7 @@ if __name__ == '__main__':
 				else:
 					improved = False
 				
-				new_weights = best_weights - 0.1 * direction
+				new_weights = best_weights - 0.3 * direction
 				new_score = evaluate(new_weights)
 				sys.stdout.write('#');sys.stdout.flush()
 				if new_score > best_score:
