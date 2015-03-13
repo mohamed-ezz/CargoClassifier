@@ -316,13 +316,25 @@ if __name__ == '__main__':
 	parser.add_argument('-o',dest='output_dir', help="Output directory", default='/idpdata/seg_output/kmeans_growth/')
 	parser.add_argument('-l',dest='labeled_csv',help="Path to Labeled segmentation csv",default='/idpdata/frontal/segmentation_labels.csv')
 	args = parser.parse_args()	
-	
+
+
+
+##### SINGLE RUN ON ALL IMAGES
+# 	extractor = KmeansExtractor(args.input_dir, args.output_dir)
+# 	#extractor = AggCluster(args.input_dir, args.output_dir)
+# 	predicted_csv = extractor.extractAllObjects() #filepath+name
+# 	if args.labeled_csv:
+# 		print 'Comparing results with labeles.'
+# 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
+# 
+# 	exit(0)
 
 #############
 	import math
 	def evaluate(weight_vector):
-		
-		cfg.Y_KMEANS_SCALE, cfg.X_KMEANS_SCALE, cfg.DEPTH_KMEANS_SCALE, cfg.COLOR_KMEANS_SCALE = weight_vector
+		print 'Evaluating:', weight_vector
+		#cfg.Y_KMEANS_SCALE, cfg.X_KMEANS_SCALE, cfg.DEPTH_KMEANS_SCALE, cfg.COLOR_KMEANS_SCALE = weight_vector
+		cfg.AREA_WEIGHT, cfg.NONBG_WEIGHT, cfg.INVENTROPY_WEIGHT = weight_vector
 		extractor = KmeansExtractor(args.input_dir, args.output_dir)
 		predicted_csv = extractor.extractAllObjects() 
 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
@@ -334,7 +346,7 @@ if __name__ == '__main__':
 	best_score_for_init = []
 
 	while True: #for each initialization
-		init=np.random.randn(4)
+		init=np.random.randn(3)
 		init = init*np.sign(init)*10
 		print 'Initializing to',init
 		best_weights = np.array(init) #best_ = current _
@@ -343,7 +355,7 @@ if __name__ == '__main__':
 		
 		improved = True
 		while improved:
-			for direction in [[1,0,0,0] ,[0,1,0,0], [0,0,1,0], [0,0,0,1]]:
+			for direction in [[1,0,0] ,[0,1,0], [0,0,1]]:
 				direction = np.array(direction)
 				new_weights = best_weights + 0.3 * direction
 				new_score = evaluate(new_weights)
@@ -387,13 +399,6 @@ if __name__ == '__main__':
 
 
 
-##### SINGLE RUN ON ALL IMAGES
-# 	extractor = KmeansExtractor(args.input_dir, args.output_dir)
-#  	#extractor = AggCluster(args.input_dir, args.output_dir)
-#  	predicted_csv = extractor.extractAllObjects() #filepath+name
-#  	if args.labeled_csv:
-#  		print 'Comparing results with labeles.'
-#  		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
 
 
 #### TUNE SCORE TERM WEIGHTS
