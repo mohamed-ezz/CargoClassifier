@@ -336,53 +336,51 @@ if __name__ == '__main__':
 	
 	best_weights_for_init = []
 	best_score_for_init = []
-	try:
-		for init in inits:
-			print 'Initializing to',init
-			best_weights = np.array(init) #best_ = current _
-			best_score = evaluate(best_weights)
-			best_init = init
-			
-			improved = True
-			while improved:
-				for direction in [[1,0,0,0] ,[0,1,0,0], [0,0,1,0], [0,0,0,1]]:
-					direction = np.array(direction)
-					new_weights = best_weights + 0.05 * direction
-					new_score = evaluate(new_weights)
-					sys.stdout.write('#');sys.stdout.flush()
-					if new_score > best_score:
-						improved=True
-						best_score = new_score
-						best_weights = new_weights
-						best_init = init
-						print 'New best score:',best_score,'at weights:',best_weights
-						continue
-					else:
-						improved = False
-					
-					new_weights = best_weights - 0.05 * direction
-					new_score = evaluate(new_weights)
-					sys.stdout.write('#');sys.stdout.flush()
-					if new_score > best_score:
-						improved=True
-						best_score = new_score
-						best_weights = new_weights
-						best_init = init
-						print 'New best score:',best_score,'at weights:',best_weights
-					else:
-						improved=False
-			
-			
-			best_weights_for_init.append(best_weights)
-			best_score_for_init.append(best_score)
-	except KeyboardInterrupt:
-		pass
-	finally:
-		print 'Done'
-		best_idx = np.argmax(best_score_for_init)
-		print 'Best Weights Vector : ', best_weights_for_init[best_idx]
-		print 'Best Score : ', best_score_for_init[best_idx]
-		print 'Best Initialization:', inits[best_idx]
+
+	for init in inits:
+		print 'Initializing to',init
+		best_weights = np.array(init) #best_ = current _
+		best_score = evaluate(best_weights)
+		best_init = init
+		
+		improved = True
+		while improved:
+			for direction in [[1,0,0,0] ,[0,1,0,0], [0,0,1,0], [0,0,0,1]]:
+				direction = np.array(direction)
+				new_weights = best_weights + 0.05 * direction
+				new_score = evaluate(new_weights)
+				sys.stdout.write('#');sys.stdout.flush()
+				if new_score > best_score:
+					improved=True
+					best_score = new_score
+					best_weights = new_weights
+					best_init = init
+					print 'New best score:',best_score,'at weights:',best_weights
+					continue
+				else:
+					improved = False
+				
+				new_weights = best_weights - 0.05 * direction
+				new_score = evaluate(new_weights)
+				sys.stdout.write('#');sys.stdout.flush()
+				if new_score > best_score:
+					improved=True
+					best_score = new_score
+					best_weights = new_weights
+					best_init = init
+					print 'New best score:',best_score,'at weights:',best_weights
+				else:
+					improved=False
+		
+		
+		best_weights_for_init.append(best_weights)
+		best_score_for_init.append(best_score)
+
+	print 'Done'
+	best_idx = np.argmax(best_score_for_init)
+	print 'Best Weights Vector : ', best_weights_for_init[best_idx]
+	print 'Best Score : ', best_score_for_init[best_idx]
+	print 'Best Initialization:', inits[best_idx]
 			
 #############
 
