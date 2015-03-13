@@ -6,8 +6,6 @@ from sklearn.cluster import KMeans
 import idputils
 from scipy import stats
 from extraction import config as cfg
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 import sys
 
 #dict storing deltas of: [y1 x1 y2 x2], used in region growing step
@@ -293,8 +291,9 @@ class KmeansExtractor(ObjectExtractor):
 # 		idputils.red_rect(colorimage,cy1,cx1,cy2,cx2)
 # 		rects.append((cy1,cx1,cy2,cx2))
 		
-		self.saveImage(prefix+'_COLOR.bmp', colorimage)
-		self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
+		#self.saveImage(prefix+'_COLOR.bmp', colorimage)
+		#self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
+		
 		#idputils.imshow(colorimage,'color segment result')
 		#idputils.imshow(segmentimage_orig,'segment result')
 		
@@ -330,7 +329,7 @@ if __name__ == '__main__':
 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
 		return best_score
 
-	inits = [[1,1,1,1],
+	inits = [[1,2,4,5],
 			 [1,0,0,0],
 			 [0,1,0,0],
 			 [0,0,1,0],
@@ -380,6 +379,7 @@ if __name__ == '__main__':
 	except KeyboardInterrupt:
 		pass
 	finally:
+		print 'Done'
 		best_idx = np.argmax(best_score_for_init)
 		print 'Best Weights Vector : ', best_weights_for_init[best_idx]
 		print 'Best Score : ', best_score_for_init[best_idx]

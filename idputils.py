@@ -4,7 +4,6 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import random
-from mpl_toolkits.mplot3d import Axes3D
 
 def imshow(img,title=''):
 	cv2.imshow(title,img)

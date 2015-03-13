@@ -2,14 +2,14 @@ import os
 import cv,cv2
 import idputils
 import csv
-from config import *
 import sys
 import multiprocessing
 import time
+import config as cfg
 
 class ObjectExtractor:
 	
-	def __init__(self, imagesdir = None, outputdir=None, experiment_name = '', depth_lo = DEPTH_LO, depth_hi=DEPTH_HI):
+	def __init__(self, imagesdir = None, outputdir=None, experiment_name = '', depth_lo = cfg.DEPTH_LO, depth_hi=cfg.DEPTH_HI):
 		self.imagesdir = imagesdir
 		self.outputdir = outputdir
 		self.depth_hi = depth_hi
@@ -38,7 +38,6 @@ class ObjectExtractor:
 		print 'Found total of %i images.' % len(color_depth_prefix)
 		if not os.path.exists(self.outputdir):
 			os.makedirs(self.outputdir)
-		
 		#shuffle(color_depth_prefix)
 		output_filename = os.path.join(self.outputdir, "segmentation_output.csv")
 		csv_file = open(output_filename, 'w')
@@ -46,10 +45,17 @@ class ObjectExtractor:
 		csv_writer.writerow(["image_id", "box_id", "y1", "x1", "y2", "x2"])
 		
 		t1 = time.time()
-		pool = multiprocessing.Pool(processes=cfg.N_PARALLEL_PROCESSES)
-		images_rects = pool.map(self, color_depth_prefix) # list of lists. For each item of color_depth_prefix, we get list of rects
+		try:
+			pool = multiprocessing.Pool(processes=cfg.N_PARALLEL_PROCESSES)
+			images_rects = pool.map(self, color_depth_prefix) # list of lists. For each item of color_depth_prefix, we get list of rects
+			pool.join()
+		except KeyboardInterrupt:
+			pool.terminate()
+			pool.join()
+			raise
+		
 		print '\n',time.time()-t1,'seconds'
-
+		
 		for i, rect_list in enumerate(images_rects):
 			_, _, prefix = color_depth_prefix[i]
 			count = 1
