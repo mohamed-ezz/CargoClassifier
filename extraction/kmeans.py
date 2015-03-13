@@ -328,16 +328,14 @@ if __name__ == '__main__':
 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
 		return best_score
 
-	inits = [[1,2,4,5],
-			 [1,0,0,0],
-			 [0,1,0,0],
-			 [0,0,1,0],
-			 [0,0,0,1]]
 	
+	inits = []
 	best_weights_for_init = []
 	best_score_for_init = []
 
-	for init in inits:
+	while True: #for each initialization
+		init=np.random.randn(4)
+		init = init*np.sign(init)*10
 		print 'Initializing to',init
 		best_weights = np.array(init) #best_ = current _
 		best_score = evaluate(best_weights)
@@ -347,7 +345,7 @@ if __name__ == '__main__':
 		while improved:
 			for direction in [[1,0,0,0] ,[0,1,0,0], [0,0,1,0], [0,0,0,1]]:
 				direction = np.array(direction)
-				new_weights = best_weights + 0.05 * direction
+				new_weights = best_weights + 0.1 * direction
 				new_score = evaluate(new_weights)
 				sys.stdout.write('#');sys.stdout.flush()
 				if new_score > best_score:
@@ -360,7 +358,7 @@ if __name__ == '__main__':
 				else:
 					improved = False
 				
-				new_weights = best_weights - 0.05 * direction
+				new_weights = best_weights - 0.1 * direction
 				new_score = evaluate(new_weights)
 				sys.stdout.write('#');sys.stdout.flush()
 				if new_score > best_score:
@@ -375,12 +373,14 @@ if __name__ == '__main__':
 		
 		best_weights_for_init.append(best_weights)
 		best_score_for_init.append(best_score)
-
-	print 'Done'
-	best_idx = np.argmax(best_score_for_init)
-	print 'Best Weights Vector : ', best_weights_for_init[best_idx]
-	print 'Best Score : ', best_score_for_init[best_idx]
-	print 'Best Initialization:', inits[best_idx]
+		inits.append(init)
+		best_idx = np.argmax(best_score_for_init)
+		print 'Best Weights Vector : ', best_weights_for_init[best_idx]
+		print 'Best Score : ', best_score_for_init[best_idx]
+		print 'Best Initialization:', inits[best_idx]
+		print '============================================='
+		print '============================================='
+		print '\n\n'
 			
 #############
 
