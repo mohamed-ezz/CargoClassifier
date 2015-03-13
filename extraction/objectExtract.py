@@ -48,7 +48,7 @@ class ObjectExtractor:
 		try:
 			pool = multiprocessing.Pool(processes=cfg.N_PARALLEL_PROCESSES)
 			images_rects = pool.map(self, color_depth_prefix) # list of lists. For each item of color_depth_prefix, we get list of rects
-			pool.join()
+			pool.terminate()
 		except KeyboardInterrupt:
 			pool.terminate()
 			pool.join()
