@@ -310,7 +310,6 @@ class KmeansExtractor(ObjectExtractor):
 if __name__ == '__main__':
 	import segmentation_error
 	import argparse
-	from extraction.linkage import AggCluster
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-i',dest='input_dir',  help='Input directory', default = '/idpdata/frontal/')
