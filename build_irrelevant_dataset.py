@@ -16,9 +16,12 @@ args = parser.parse_args()
 if not os.path.exists(args.output_dir):
 	os.makedirs(args.output_dir)
 
-STEP = 50
-SHAPES = [(256,75), (100,100),
-		  (128,90), (75,192)]
+#STEP = 50
+#SHAPES = [(256,75), (100,100),
+#		  (128,90), (75,192)]
+
+STEP = 70
+SHAPES = [(256,75), (75,192)]
 
 for colorname, depthname, prefix in idputils.list_images(args.input_dir):
 	colorimage = cv2.imread(colorname)

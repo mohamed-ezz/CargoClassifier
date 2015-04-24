@@ -49,6 +49,7 @@ class ObjectExtractor:
 			pool = multiprocessing.Pool(processes=cfg.N_PARALLEL_PROCESSES)
 			images_rects = pool.map(self, color_depth_prefix) # list of lists. For each item of color_depth_prefix, we get list of rects
 			pool.terminate()
+			pool.join()
 		except KeyboardInterrupt:
 			pool.terminate()
 			pool.join()
@@ -83,11 +84,15 @@ class ObjectExtractor:
 		"""Workaround to be able to call Pool.map(self._segment, list).
 		It solves 2 problems actually: 
 		1-instance methods not being picklable, but Instances/Objects themselves are.
-		2-not being able to have multi-argument function passed to Pool.map. __call__ acts as a wrapper and does the extraction"""
+		2-not being able to have multi-argument function passed to Pool.map. __call__ acts as a wrapper and does the extraction of arguments from args_tuple"""
 		colorname, depthname, prefix = args_tuple #Extract
 		sys.stdout.write('.')
 		sys.stdout.flush()
-		return self._segment(colorname, depthname, prefix)
+		try:
+			return self._segment(colorname, depthname, prefix)
+		except:
+			import logging
+			logging.exception("Child terminating...")
 		
 		
 	

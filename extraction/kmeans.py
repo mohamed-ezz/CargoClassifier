@@ -15,6 +15,7 @@ GROW_DIRECTION = {
 			"GROW_RIGHT":  np.array([ 0, 0, 0, 1]),
 			"GROW_UP":     np.array([-1, 0, 0, 0]),
 			"GROW_DOWN":   np.array([ 0, 0, 1, 0]),
+			
 			"SHRINK_LEFT": np.array([ 0, 0, 0,-1]), #the right side of the rect shrinks to the left
 			"SHRINK_RIGHT":np.array([ 0, 1, 0, 0]), #left side shrink right
 			"SHRINK_UP":   np.array([ 0, 0,-1, 0]), #bottom side move up
@@ -33,8 +34,9 @@ class KmeansExtractor(ObjectExtractor):
 		Image is expected to be 3 channel image after kmeans discretization.
 		However all 3 channels have the same value (yes, redundant and needs to be fixed)
 		""" 
-		#Take 1 channel only of the given image
-		image = image[:,:,0]
+		if len(image.shape) > 2 and image.shape[2] > 1:
+		#Take 1 channel only of the given image if it has a 3rd dimension (channel)
+			image = image[:,:,0]
 		
 #		Calculate Entropy in bits (for Non-bg pixels only) (the bigger the worse)
 #		=============
@@ -48,9 +50,12 @@ class KmeansExtractor(ObjectExtractor):
 		
 		non_bg_percent= (image != 0).sum()*1.0 / (image.size+1)
 		
-		#print area_percent, non_bg_percent, inv_entropy
 		w_area, w_nonbg, w_inventropy = cfg.AREA_WEIGHT, cfg.NONBG_WEIGHT, cfg.INVENTROPY_WEIGHT
 		best_score= w_area*area_percent + w_nonbg*non_bg_percent + w_inventropy*inv_entropy
+		
+		#AD HOC RULES
+		if image.shape[1] / (cfg.PREDICT_AT_SCALE*640) > 0.25: return 0
+		
 		return best_score
 # 		===========================================
 		
@@ -79,7 +84,7 @@ class KmeansExtractor(ObjectExtractor):
 		best_rect = None #np.array([y1,x1,y2,x2])
 		for y1 in xrange(0,height-hsize,step):
 			for x1 in xrange(0,width-wsize,step):
-				for config in xrange(1,3):
+				for config in xrange(1,2):
 					y2 = int(y1+ config* cfg.SEED_HEIGHT * cfg.PREDICT_AT_SCALE)
 					x2 = int(x1+ config* cfg.SEED_WIDTH  * cfg.PREDICT_AT_SCALE)
 					best_score = self._region_grow_score(image[y1:y2+1, x1:x2+1]) 
@@ -92,15 +97,18 @@ class KmeansExtractor(ObjectExtractor):
 		def crop(image, rect):
 			y1,x1,y2,x2 = rect #tuple
 			return image[y1:y2+1, x1:x2+1]
-		def grow(rect, full_image, DIRECTION, old_score):
+		def grow(rect, full_image, DIRECTIONS, old_score):
 			"""Modifies rect in place by growing it in the specified direction (string)
 			according to best_score on the given image.
 			Returns new best_score if growing improves old_score, or None if growing did not take place because it 
 			worsens the best_score"""
-			
-			new_rect3= np.array(rect) + STEP_SIZE*3 * GROW_DIRECTION[DIRECTION] #grow/shrink rect
-			new_rect2= np.array(rect) + STEP_SIZE*2 * GROW_DIRECTION[DIRECTION] #grow/shrink rect
-			new_rect1 = np.array(rect) + STEP_SIZE * GROW_DIRECTION[DIRECTION] #grow/shrink rect
+			DIRECTION = np.zeros(4)
+			for dire in DIRECTIONS:
+				DIRECTION += GROW_DIRECTION[dire]
+				
+			new_rect3= np.array(rect) + STEP_SIZE*3 * DIRECTION #grow/shrink rect
+			new_rect2= np.array(rect) + STEP_SIZE*2 * DIRECTION #grow/shrink rect
+			new_rect1= np.array(rect) + STEP_SIZE*1 * DIRECTION #grow/shrink rect
 			rects = [ new_rect1, new_rect2, new_rect3]
 			scores= map(lambda rect: self._region_grow_score(crop(full_image,rect)), rects)
 			max_idx = np.argmax(scores)
@@ -119,35 +127,44 @@ class KmeansExtractor(ObjectExtractor):
 # 		
 # 		while prev_iteration_score != best_score:
 # 			prev_iteration_score = best_score
-# 			best_score = grow(best_rect, image, "GROW_LEFT", best_score) or best_score #return 1st non-null value
-# 			best_score = grow(best_rect, image, "GROW_RIGHT", best_score) or best_score
-# 			best_score = grow(best_rect, image, "GROW_DOWN", best_score) or best_score
-# 			best_score = grow(best_rect, image, "GROW_UP", best_score) or best_score
-# 			best_score = grow(best_rect, image, "SHRINK_LEFT", best_score) or best_score #return 1st non-null value
-# 			best_score = grow(best_rect, image, "SHRINK_RIGHT", best_score) or best_score
-# 			best_score = grow(best_rect, image, "SHRINK_DOWN", best_score) or best_score
-# 			best_score = grow(best_rect, image, "SHRINK_UP", best_score) or best_score			
+# 			best_score = grow(best_rect, image, ["GROW_LEFT"], best_score) or best_score #return 1st non-null value
+# 			best_score = grow(best_rect, image, ["GROW_RIGHT"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_DOWN"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_UP"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["SHRINK_LEFT"], best_score) or best_score #return 1st non-null value
+# 			best_score = grow(best_rect, image, ["SHRINK_RIGHT"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["SHRINK_DOWN"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["SHRINK_UP"], best_score) or best_score			
 # 		y1,x1,y2,x2 = best_rect #unpack np array
-# 		return y1,x1,y2,x2
+# 		return y1,x1,y2,x2, best_score
 ############################################################
 
 
 
 ##########################
 
-# REGION GROWTH ALGO 2 (GROW ANY ORDER):	
+# REGION GROWTH ALGO 2 (GROW ANY ORDER):
 		best_score = float('-inf')
 		prev_iteration_score = None
 		
 		while prev_iteration_score != best_score:
 			prev_iteration_score = best_score
-			best_score = grow(best_rect, image, "GROW_LEFT", best_score) or best_score #return 1st non-null value
-			best_score = grow(best_rect, image, "GROW_RIGHT", best_score) or best_score
-			best_score = grow(best_rect, image, "GROW_DOWN", best_score) or best_score
-			best_score = grow(best_rect, image, "GROW_UP", best_score) or best_score
+			best_score = grow(best_rect, image, ["GROW_LEFT"], best_score) or best_score #return 1st non-null value
+			best_score = grow(best_rect, image, ["GROW_RIGHT"], best_score) or best_score
+			best_score = grow(best_rect, image, ["GROW_DOWN"], best_score) or best_score
+			best_score = grow(best_rect, image, ["GROW_UP"], best_score) or best_score
+			
+# 			best_score = grow(best_rect, image, ["GROW_LEFT","SHRINK_UP"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_LEFT","SHRINK_DOWN"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_RIGHT","SHRINK_UP"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_RIGHT","SHRINK_DOWN"], best_score) or best_score	
+# 			best_score = grow(best_rect, image, ["GROW_UP","SHRINK_LEFT"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_UP","SHRINK_RIGHT"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_DOWN","SHRINK_LEFT"], best_score) or best_score
+# 			best_score = grow(best_rect, image, ["GROW_DOWN","SHRINK_RIGHT"], best_score) or best_score	
 			
 		y1,x1,y2,x2 = best_rect #unpack np array
-		return y1,x1,y2,x2
+		return y1,x1,y2,x2, best_score
 ##########################
 
 
@@ -185,7 +202,7 @@ class KmeansExtractor(ObjectExtractor):
 # 		print best_rect
 # 		
 # 		y1,x1,y2,x2 = best_rect #unpack np array
-# 		return y1,x1,y2,x2
+# 		return y1,x1,y2,x2, best_score
 ##############################################################################
 	
 	
@@ -225,9 +242,9 @@ class KmeansExtractor(ObjectExtractor):
 		#now data is a matrix, let's standardize it
 		return data
 
-	def _do_clustering(self,data):
+	def _do_clustering(self,data, n_clusters):
 # 		print 'Start Kmeans'
-		model=KMeans(n_clusters=4, n_init=8, random_state=982)
+		model=KMeans(n_clusters=n_clusters, n_init=8, random_state=982)
 		data = sklearn.preprocessing.scale(data) #returns a copy!
 		
 		#PLOT 3D
@@ -246,56 +263,61 @@ class KmeansExtractor(ObjectExtractor):
 		return labels
 	
 		
-	def _segment(self, colorname, depthname, prefix):		
+	def _segment(self, colorname, depthname, prefix, output_clustered_image = False, write_output = True):	
+		"""
+		output_clustered_image: Will stop function after clustering and returns the resulting image (without fitting boxes)
+		write_output : if true, the result of kmeans clustering will be written as a grayscale image, and also the end result will be written
+						, which is the color image, with red rectangles drawn around the detected objects
+		"""	
 		colorimage = cv2.imread(colorname)
 		depthimage = cv2.imread(depthname,-1)
 		scaled_size = (int(640*cfg.PREDICT_AT_SCALE), int(480*cfg.PREDICT_AT_SCALE))
 		colorimage, depthimage = cv2.resize(colorimage, scaled_size) , cv2.resize(depthimage, scaled_size)
 		colorimage,depthimage = self._threshold_depth(colorimage, depthimage)
-		#colorimage = cv2.resize(colorimage, (640,480))
-		#depthimage = cv2.resize(depthimage, (640,480))
+		height = colorimage.shape[0]
+		
 		#data is n_pixels x n_features matrix. Contains only foreground pixels.
 		#Each row in data matrix is (y, x, z, hue)
-# 		print 'Preparing data matrix'
 		data = self._toKmeansMatrix(colorimage, depthimage) 
-		labels = self._do_clustering(data)
+		
+		
+		labels = self._do_clustering(data, n_clusters=4)
+		#distrib = np.bincount(labels)/(1.0*labels.size)
+		#print distrib
 		#Put segmentation result onto image
-		segmentimage = colorimage.copy() #image that will carry cluster numbers
+		clustered_image = colorimage.copy() #image that will carry cluster numbers
+		#label_to_color = {0:(9,255,255),4:(4,32,0),6:(6,172,57),3:(3,217,29),1:(1,179,140),5:(5,184,230),2:(2,98,217),7:(7,0,170),8:(8,115,191)}
 		for i in range(data.shape[0]):
-			graylevel = 84*(labels[i]+1)
-			#@TODO: make segmentimage single channel !!
-			segmentimage[data[i][0], data[i][1]] = (graylevel,graylevel,graylevel)
+			grayvalue = int((255.0/5)*(labels[i]+1))
+			clustered_image[data[i][0], data[i][1]] = (grayvalue, grayvalue, grayvalue)
+			#clustered_image[data[i][0], data[i][1]] = label_to_color[labels[i]]
 		
 		kernelsize = int(cfg.MEDIAN_BLUR_KERNEL_SIZE*cfg.PREDICT_AT_SCALE)
-		kernelsize = kernelsize if kernelsize%2==1 else kernelsize+1 #make sure it's odd
-		segmentimage = cv2.medianBlur(segmentimage, kernelsize)
-		#segmentimage, depthimage = self._threshold_depth(segmentimage, depthimage)
+		clustered_image = cv2.medianBlur(clustered_image, kernelsize if kernelsize%2==1 else kernelsize+1)
+		if output_clustered_image:
+			return clustered_image
 		
-		segmentimage_orig = segmentimage.copy()
+		if write_output: #segmentimage_orig will be used later only if write_output is True
+			segmentimage_orig = clustered_image.copy() #save clustered image b4 it gets destroyed
+
+		n_objects = cfg.N_OBJECTS
 		rects = []
-		
-		ay1,ax1,ay2,ax2 = self._find_least_variance_box(segmentimage)
-		segmentimage[ay1:ay2+1, ax1:ax2+1] = 0
-		idputils.red_rect(colorimage, ay1,ax1,ay2,ax2)
-		idputils.red_rect(segmentimage_orig, ay1,ax1,ay2,ax2)
-		rects.append((ay1,ax1,ay2,ax2))
-		
-		by1,bx1,by2,bx2 = self._find_least_variance_box(segmentimage)
-		segmentimage[by1:by2+1, bx1:bx2+1] = 0
-		idputils.red_rect(colorimage, by1,bx1,by2,bx2)
-		idputils.red_rect(segmentimage_orig, by1,bx1,by2,bx2)
-		rects.append((by1,bx1,by2,bx2))
-		
-# 		cy1,cx1,cy2,cx2 = self._find_least_variance_box(segmentimage)
-# 		segmentimage[cy1:cy2+1, cx1:cx2+1] = 0
-# 		idputils.red_rect(colorimage,cy1,cx1,cy2,cx2)
-# 		rects.append((cy1,cx1,cy2,cx2))
-		
-		#self.saveImage(prefix+'_COLOR.bmp', colorimage)
-		#self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
-		
-		#idputils.imshow(colorimage,'color segment result')
-		#idputils.imshow(segmentimage_orig,'segment result')
+		for i in range(n_objects):
+			y1,x1,y2,x2, regionscore = self._find_least_variance_box(clustered_image)
+			if regionscore > cfg.MIN_ACCEPTED_OBJECT_SCORE and y1*1.0/height < 0.9: #accept object if it has min score and appears/starts at top 80% 
+				rects.append((y1,x1,y2,x2))
+			clustered_image[y1:y2+1, x1:x2+1] = 0
+			
+	
+		if write_output:
+			for y1,x1,y2,x2 in rects:
+				idputils.red_rect(colorimage, y1,x1,y2,x2)
+				idputils.red_rect(segmentimage_orig, y1,x1,y2,x2)
+				
+			#idputils.imshow(colorimage,'color segment result')
+			#idputils.imshow(segmentimage_orig,'segment result')		
+			self.saveImage(prefix+'_COLOR.bmp', colorimage)
+			self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
 		
 		return rects
 		
@@ -320,14 +342,14 @@ if __name__ == '__main__':
 
 
 ##### SINGLE RUN ON ALL IMAGES
-# 	extractor = KmeansExtractor(args.input_dir, args.output_dir)
-# 	#extractor = AggCluster(args.input_dir, args.output_dir)
-# 	predicted_csv = extractor.extractAllObjects() #filepath+name
-# 	if args.labeled_csv:
-# 		print 'Comparing results with labeles.'
-# 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
-# 
-# 	exit(0)
+	extractor = KmeansExtractor(args.input_dir, args.output_dir)
+	#extractor = AggCluster(args.input_dir, args.output_dir)
+	predicted_csv = extractor.extractAllObjects() #filepath+name
+	if args.labeled_csv:
+		print 'Comparing results with labeles.'
+		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
+
+	exit(0)
 
 #############
 	import math

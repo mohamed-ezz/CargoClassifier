@@ -4,11 +4,15 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import random
+from sklearn.metrics import precision_recall_curve
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def imshow(img,title=''):
 	cv2.imshow(title,img)
 	disp()
-	
+
 def disp():
 	cv2.waitKey(0)
 	cv2.destroyAllWindows()
@@ -75,10 +79,7 @@ def is_object_filename(filename):
 def get_filename_type(filename):
 	"""Returns 'COLOR' or 'DEPTH' """
 	filename = os.path.basename(filename)
-	if is_object_filename(filename):
-		return filename.split("_")[2].split(".")[0] # split on . to remove extension
-	else:
-		return filename.split("_")[1].split(".")[0] # split on . to remove extension
+	return filename.split("_")[-1].split(".")[0] # split on . to remove extension
 	
 def get_filename_prefix(filename):
 	"""Extracts prefix/image_id given a filename of a full image (e.g 1234_COLOR.bmp) or 
@@ -127,7 +128,16 @@ def to_object_filename(filename, objectindex):
 	return os.path.join(directory, '%s_%s_%s%s' % (prefix, objectindex, imgtype, ext))
 	
 	
-	
+def rects_to_objectimages(colorimage, rects):
+	"""Crops a given image to objects, given the rects(box positions to crop at)
+	rects = [(y1,x1,y2,x2), (y1,x1,y2,x2), ...etc]. Returns a list of images (numpy arrays)"""
+	images = []
+	for rect in rects:
+		y1,x1,y2,x2 = rect
+		images.append(colorimage[y1:y2+1, x1:x2+1])
+	return images
+		
+		
 ###### PLOTTING ######
 def scatter3d(x,y,z=None,labels=None,colors=None,sample_percentage=None,outputfile=None,show=False):
 	""" sample_percentage : if not None, only a sample of the full given data will be plotted. percentage here is 0 to 1 indicates how
@@ -165,7 +175,28 @@ def scatter3d(x,y,z=None,labels=None,colors=None,sample_percentage=None,outputfi
 	
 	
 	
+def plot_prec_recall(y_list, y_pred_prob_list, labels_list, title, filename=None):
+	"""Takes a list of one or more y (ground truth labels), and predicted probabilities y_pred_prob (numpy arrays)
+	and produces a precision recall plot. Also a label for each line is given in labels_list.
+	The plot will have the given title and saved to filename"""
 	
+	zipped = zip(y_list, y_pred_prob_list, labels_list)
+	for y, y_pred_prob, label in zipped:
+		precision, recall, _ = precision_recall_curve(y, y_pred_prob)
+		print 'data points on Prec-Rec : %i' % len(recall)
+		plt.xlabel('Recall')
+		plt.ylabel('Precision')
+		plt.ylim(0,1)
+		plt.xlim(0,1)
+		plt.plot(recall,precision, label=label)
+		
+	plt.suptitle(title)
+	plt.legend(loc=3)
+	if filename:
+		plt.savefig(filename)
+	else:
+		plt.show()
+	plt.clf() # clear plot
 	
 	
 	
