@@ -69,12 +69,11 @@ for colorname, depthname, prefix in idputils.list_images(INPUT_DIR):
 	image = cv2.imread(colorname)
 	add_flip_writer(image,'horizontal', prefix)
 	
-# TRANSLTE and ROTATE original and FLIPPED
+# TRANSLTE original and FLIPPED
 for colorname, depthname, prefix in idputils.list_images(INPUT_DIR):
 	colorfilename = os.path.basename(colorname)
 	prefix = '_'.join(colorfilename.split('_')[:-1])
 	image = cv2.imread(colorname)
-	#ROTATE
 	
 	for offx in [-7,0,7]:
 		for offy in [-7,0,7]:

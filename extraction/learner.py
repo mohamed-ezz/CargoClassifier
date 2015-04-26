@@ -10,12 +10,13 @@ from sklearn.svm import LinearSVC
 from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 import pickle
+from operator import add
 from skimage.feature import hog
 
 class Learner:
-	def __init__(self, feature='hog', positive_dir = None, negative_dir = None, test_portion = 0.2, image_size = (64,64), datapicklefile=None):
-		self.positive_dir = positive_dir #positive classes directories
-		self.negative_dir = negative_dir #irrelevant / non-object images
+	def __init__(self, feature='hog', positive_dirs = None, negative_dirs = None, test_portion = 0.2, image_size = (64,64), datapicklefile=None):
+		self.positive_dirs = positive_dirs #positive classes directories
+		self.negative_dirs = negative_dirs #irrelevant / non-object images
 		self.test_portion = test_portion
 		self.image_size = image_size
 		self.feature = feature # 'hue' or 'hog' or 'gray'
@@ -25,8 +26,10 @@ class Learner:
 		self.clf = None
 		self.data = 'None' #write as string, bcoz otherwise numpy array will be compared elementwise with value None (in a future numpy version).
 		if datapicklefile: #if data is ready in a pickle file
-			self.data = pickle.load(open(datapicklefile,'r'))
-			print 'Matrix loaded from %s' % datapicklefile
+			self.read_data_matrix(datapicklefile)
+	
+	def load_classifier(self, clfpicklepath):
+		self.clf = pickle.load(open(clfpicklepath,'r'))
 		
 	def pickle_classifier(self, outputpath):
 		if self.clf:
@@ -37,15 +40,25 @@ class Learner:
 	def pickle_data_matrix(self, outputpath):
 		if self.data == 'None':
 			raise Exception('data matrix is not yet read. Cannot save it to a pickle file.')
+		
+		directory = os.path.dirname(outputpath)
+		if not os.path.exists(directory):
+			os.makedirs(directory)
+			
 		pickle.dump(self.data, open(outputpath,'w'))
 		
-	def read_data_matrix(self):
+	def read_data_matrix(self, datapicklefile=None):
+		"""Read data from pickled file if given in datapicklefile, or from images in self.positive_dirs & self.negative_dirs"""
 		
+		if datapicklefile != None:
+			self.data = pickle.load(open(datapicklefile,'r'))
+			print 'Matrix loaded from %s' % datapicklefile
+
 		if self.data != 'None':
 			return self.data
 		
-		Xpos, ypos = self._read_dir_to_matrix(self.positive_dir, 1)
-		Xneg, yneg = self._read_dir_to_matrix(self.negative_dir, 0)
+		Xpos, ypos = self._read_dir_to_matrix(self.positive_dirs, 1)
+		Xneg, yneg = self._read_dir_to_matrix(self.negative_dirs, 0)
 		
 		X = np.concatenate((Xpos,Xneg))
 		y = np.concatenate((ypos,yneg))
@@ -57,7 +70,7 @@ class Learner:
 		print 'Data ready in memory. Matrix size:%s' % (str(self.data.shape))
 		return self.data
 	
-	def _read_dir_to_matrix(self, dir, label):
+	def _read_dir_to_matrix(self, dirs, label):
 		"""Returns 2-tuple (data,y) corresponding to images in a single directory, all having the same label
 		Where data is the X feature matrix. y is the corresponding class label vector (y is just a vector of same values = label)"""
 		
@@ -66,7 +79,10 @@ class Learner:
 			n_features = 1764
 		else:
 			n_features = self.image_size[0] * self.image_size[1]
-		n_rows = len(idputils.list_images(dir))
+		
+		lens = map(lambda posdir: len(idputils.list_images(posdir)), dirs)
+		n_rows = reduce(add, lens)
+		#n_rows = len(idputils.list_images(dirs))
 		
 		print 'reading data to memory'
 		if self.feature == 'hog':
@@ -76,24 +92,25 @@ class Learner:
 			
 		y   = np.ones((n_rows)) * -1 #class label (initialize with -1)
 		idx = 0
-		imagenames = idputils.list_images(dir)
-		for colorpath, depthpath, prefix in imagenames:	
-			colorimage = cv2.imread(colorpath)
-			#preprocessing + feature selection
-			#print 'Reading: ',colorpath
-			vector = self._image_to_featurevector(colorimage, self.feature)
-			y[idx] = label
-			data[idx,:] = vector
-			#print idx
-			idx += 1
+		for posdir in dirs:
+			imagenames = idputils.list_images(posdir)
+			for colorpath, depthpath, prefix in imagenames:	
+				colorimage = cv2.imread(colorpath)
+				#preprocessing + feature selection
+				#print 'Reading: ',colorpath
+				vector = self._image_to_featurevector(colorimage)
+				y[idx] = label
+				data[idx,:] = vector
+				#print idx
+				idx += 1
 		
 		print idx
 		return data,y
 
-	def _image_to_featurevector(self, colorimage, feature = 'hue'):
-		if feature == 'hue': return self._image_to_featurevector_HUE(colorimage)
-		if feature == 'hog': return self._image_to_featurevector_HOG(colorimage)
-		if feature == 'gray': return self._image_to_featurevector_GRAY(colorimage)
+	def _image_to_featurevector(self, colorimage):
+		if self.feature == 'hue': return self._image_to_featurevector_HUE(colorimage)
+		if self.feature == 'hog': return self._image_to_featurevector_HOG(colorimage)
+		if self.feature == 'gray': return self._image_to_featurevector_GRAY(colorimage)
 		
 	def _image_to_featurevector_HUE(self, colorimage):
 		"""Takes colorimage (numpy ndarray) and does :
@@ -173,18 +190,38 @@ class Learner:
 		print 'Test:',avg_test_accuracy,'    Train:',avg_train_accuracy
 		return y_predicttest
 
+	def predictimg(self, img):
+		"""Use self.clf to predict given img. img could be a path or a numpy array image"""
+		if type(img) == str:
+			img = cv2.imread(img)
+		
+		vector = self._image_to_featurevector(img)
+		y = self.clf.predict(vector)
+		print y
+		return y[0]
+	
+	def predictdir(self, directory):
+		
+		lst = idputils.list_images(directory)
+		y = []
+		for colorname,_,_ in lst:
+			y.append(self.predictimg(colorname))
+		
+		return np.array(y)
+		
+		
 if __name__ == '__main__':
 	import argparse
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--matrix', metavar = 'path/file.pickle', dest='readMatrixPath', help = 'Path to pickle file with a numpy data matrix with last column having labels')
-	parser.add_argument('-p',dest='positive_dir', help='Directory with the positive images.')
-	parser.add_argument('-n', dest='negative_dir')
-	parser.add_argument('--save-only', metavar = 'path/file.pickle', dest='saveMatrixPath', help='Make the command only read the given images data (with -p and -n), saves it to a matrix and Stop.')
-	parser.add_argument('--feature', dest ='feature', default=None, help='The feature type to extract. Either hog, hue or gray')
-	parser.add_argument('--save-model', dest='modeloutputfile', default=None, help= 'Path to file to save the classifier model to. If this option is not used, the model will not be saved.')
+	parser.add_argument('-matrix', metavar = 'path/file.pickle', dest='readMatrixPath', help = 'Path to pickle file with a numpy data matrix with last column having labels')
+	parser.add_argument('-p',dest='positive_dirs', nargs='+', help='One or more directories with the positive images.')
+	parser.add_argument('-n', dest='negative_dirs', nargs='+')
+	parser.add_argument('-saveonly', metavar = 'path/file.pickle', dest='saveMatrixPath', help='Make the command only read the given images data (with -p and -n), saves it to a matrix and Stop.')
+	parser.add_argument('-feature', dest ='feature', default=None, help='The feature type to extract. Either hog, hue or gray')
+	parser.add_argument('-savemodel', dest='modeloutputfile', default=None, help= 'Path to file to save the classifier model to. If this option is not used, the model will not be saved.')
 	
 	args = parser.parse_args()
-	if args.readMatrixPath and (args.positive_dir or args.negative_dir or args.saveMatrixPath or args.feature):
+	if args.readMatrixPath and (args.positive_dirs or args.negative_dirs or args.saveMatrixPath or args.feature):
 		parser.error("Cannot use --matrix with one of -p,-n,--save-only")
 
 	if not args.feature:
@@ -194,7 +231,7 @@ if __name__ == '__main__':
 	if  args.readMatrixPath:
 		learner = Learner(args.feature, datapicklefile= args.readMatrixPath)
 	else:
-		learner = Learner(args.feature, positive_dir = args.positive_dir, negative_dir = args.negative_dir)
+		learner = Learner(args.feature, positive_dirs = args.positive_dirs, negative_dirs = args.negative_dirs)
 		learner.read_data_matrix()
 	
 	
