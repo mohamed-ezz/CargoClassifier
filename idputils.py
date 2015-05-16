@@ -7,7 +7,7 @@ import random
 from sklearn.metrics import precision_recall_curve
 import matplotlib.pyplot as plt
 import numpy as np
-
+import extraction.config as cfg
 
 def imshow(img,title=''):
 	cv2.imshow(title,img)
@@ -33,11 +33,22 @@ def read_segmentation_csv(filename):
 	output = defaultdict(list)
 	for line in f:
 		if line.startswith('image_id,'): continue #skip header
-		prefix, box_id, y1, x1, y2, x2 = map(int,line.split(',')) #parse
+		prefix, box_id, y1, x1, y2, x2 = map(int,line.split(','))[:6] #parse
 		output[str(prefix)].append((y1,x1,y2,x2))
 	
 	return output
 	
+def read_segmentation_withobjecttype_csv(filename):
+	"""Given a segmentation csv file, returns a dictionary {image_id: list of boxes}"""
+	f = open(filename, 'r')
+	output = defaultdict(list)
+	for line in f:
+		if line.startswith('image_id,'): continue #skip header
+		prefix, box_id, y1, x1, y2, x2, label = map(int,line.split(','))[:7] #parse
+		label = cfg.lbl_str[label]
+		output[str(prefix)].append((int(y1),int(x1),int(y2),int(x2),label))
+	
+	return output
 
 def list_images(imagesdir):
 	""" Returns a list of tuples, one for each image prefix, found in the self.imagesdir dir tree (recursively)
@@ -46,7 +57,7 @@ def list_images(imagesdir):
 	if imagesdir[-1] != '/':
 		imagesdir += '/'
 	
-	colorfnames = glob.glob(imagesdir+'*COLOR*')
+	colorfnames = sorted(glob.glob(imagesdir+'*COLOR*'))
 	depthfnames = map(to_depth_filename, colorfnames)
 	prefixes    = map(get_filename_prefix, colorfnames)
 	return zip(colorfnames, depthfnames, prefixes)
@@ -58,6 +69,8 @@ def crop_to_file_fromimage(image, output_filename, y1,x1,y2,x2):
 	cv2.imwrite(output_filename, cropped_image)
 	
 def crop_to_file(fullimage_filename, output_filename, y1,x1,y2,x2):
+	if not os.path.exists(fullimage_filename):
+		raise ValueError('Cant find image file at:%s'% fullimage_filename)
 	if get_filename_type(fullimage_filename) == 'COLOR':
 		image = cv2.imread(fullimage_filename) #numpy ndarray
 	elif get_filename_type(fullimage_filename) == 'DEPTH':
@@ -98,8 +111,8 @@ def to_depth_filename(filename):
 	
 	directory = os.path.dirname(filename)
 	filename = os.path.basename(filename)
-	if get_filename_type(filename) == 'COLOR':
-		return os.path.join(directory, filename.replace('COLOR.bmp','DEPTH.png') )
+	if 'COLOR' in get_filename_type(filename): #could be name..._COLOR.bmp or name..._COLOR-SEG.bmp
+		return os.path.join(directory, filename.replace('COLOR.bmp','DEPTH.png').replace('COLOR-SEG.bmp','DEPTH.png') )
 	else:
 		raise ValueError("Given filename is not a COLOR image filename: %s" % filename)
 	

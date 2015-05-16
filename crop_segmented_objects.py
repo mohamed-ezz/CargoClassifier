@@ -27,6 +27,7 @@ import argparse
 import idputils
 import cv2
 import os
+import numpy as np
 
 	
 	
@@ -35,6 +36,7 @@ if __name__ == '__main__':
 	parser.add_argument('-i',dest='imagepath', nargs='+', help="Path to a single color image, or a wildcard path matching multiple images.")
 	parser.add_argument('-s',dest='csvpath')
 	parser.add_argument('-o',dest='output_dir')
+	parser.add_argument('-scale',dest='scale', type=float, default = 1, help="The scale at which coordinates are saved in the csv. E.g: if -scale 0.4, then coordinates will be scaled up by 1/0.4=2.5")
 	args = parser.parse_args()
 	
 	if not os.path.exists(args.output_dir):
@@ -54,6 +56,7 @@ if __name__ == '__main__':
 		count = 1
 		print 'Cropping %i from image with id %s' % (len(boxes), str(our_prefix))
 		for box in boxes:
+			box = np.array(box)*(1/args.scale)
 			
 			idputils.crop_to_file(colorimagefilePATH, 
 					os.path.join(args.output_dir, idputils.to_object_filename(colorimagefilename, count)), *box)

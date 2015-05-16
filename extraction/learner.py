@@ -3,20 +3,16 @@ import cv2,cv
 import os,sys
 import idputils
 import config as cfg
-from sklearn.linear_model import LogisticRegression
 from sklearn import cross_validation
 from sklearn import metrics
-from sklearn.svm import LinearSVC
 from sklearn.metrics import confusion_matrix
-from sklearn.svm import SVC
 import pickle
-from operator import add
 from skimage.feature import hog
+from sklearn.metrics.metrics import classification_report
 
 class Learner:
-	def __init__(self, feature='hog', positive_dirs = None, negative_dirs = None, test_portion = 0.2, image_size = (64,64), datapicklefile=None):
-		self.positive_dirs = positive_dirs #positive classes directories
-		self.negative_dirs = negative_dirs #irrelevant / non-object images
+	def __init__(self, feature='hog', dirs = None, test_portion = 0.2, image_size = (64,64), datapicklefiles=None):
+		self.dirs = dirs
 		self.test_portion = test_portion
 		self.image_size = image_size
 		self.feature = feature # 'hue' or 'hog' or 'gray'
@@ -25,8 +21,8 @@ class Learner:
 		
 		self.clf = None
 		self.data = 'None' #write as string, bcoz otherwise numpy array will be compared elementwise with value None (in a future numpy version).
-		if datapicklefile: #if data is ready in a pickle file
-			self.read_data_matrix(datapicklefile)
+		if datapicklefiles: #if data is ready in a pickle file
+			self.read_data_matrix(datapicklefiles)
 	
 	def load_classifier(self, clfpicklepath):
 		self.clf = pickle.load(open(clfpicklepath,'r'))
@@ -47,30 +43,43 @@ class Learner:
 			
 		pickle.dump(self.data, open(outputpath,'w'))
 		
-	def read_data_matrix(self, datapicklefile=None):
-		"""Read data from pickled file if given in datapicklefile, or from images in self.positive_dirs & self.negative_dirs"""
+	def read_data_matrix(self, datapicklefiles=None):
+		"""Read data from pickled file if given in datapicklefiles, or from images in self.dirs (each dir = a class)"""
 		
-		if datapicklefile != None:
-			self.data = pickle.load(open(datapicklefile,'r'))
-			print 'Matrix loaded from %s' % datapicklefile
-
+		if datapicklefiles != None:
+			data = pickle.load(open(datapicklefiles[0],'r'))
+			remainingfiles = datapicklefiles[1:]
+			for datafile in remainingfiles:
+				data2 = pickle.load(open(datafile,'r'))
+				data = np.concatenate((data, data2),1) #concatenate columns
+			self.data = data
+			print 'Matrix loaded from %s' % datapicklefiles
 		if self.data != 'None':
 			return self.data
 		
-		Xpos, ypos = self._read_dir_to_matrix(self.positive_dirs, 1)
-		Xneg, yneg = self._read_dir_to_matrix(self.negative_dirs, 0)
-		
-		X = np.concatenate((Xpos,Xneg))
-		y = np.concatenate((ypos,yneg))
-		print y.shape
+
+		X, y = 'None', 'None'
+		for lbl, d in enumerate(self.dirs):
+			if not os.path.isdir(d): continue
+			if X=='None' and y=='None': #first timer
+				X, y = self._read_dir_to_matrix(d, lbl)
+			else:
+				Xi, yi = self._read_dir_to_matrix(d, lbl)
+				X = np.concatenate((X, Xi))
+				y = np.concatenate((y, yi))
+			
 		y = np.reshape(y,(y.shape[0],1)) #convert shape (4000,) to (4000, 1)
-		print y.shape
 		self.data = np.concatenate((X,y),1)
 
 		print 'Data ready in memory. Matrix size:%s' % (str(self.data.shape))
+		if self.feature=='hog':
+			self.data = self.data.astype('float32') #for some reason, without this line, the matrix ends up being float64.
+		elif self.feature in ['hue', 'gray']:
+			self.data = self.data.astype('uint8')
+		
 		return self.data
 	
-	def _read_dir_to_matrix(self, dirs, label):
+	def _read_dir_to_matrix(self, directory, label):
 		"""Returns 2-tuple (data,y) corresponding to images in a single directory, all having the same label
 		Where data is the X feature matrix. y is the corresponding class label vector (y is just a vector of same values = label)"""
 		
@@ -80,9 +89,7 @@ class Learner:
 		else:
 			n_features = self.image_size[0] * self.image_size[1]
 		
-		lens = map(lambda posdir: len(idputils.list_images(posdir)), dirs)
-		n_rows = reduce(add, lens)
-		#n_rows = len(idputils.list_images(dirs))
+		n_rows = len(idputils.list_images(directory))
 		
 		print 'reading data to memory'
 		if self.feature == 'hog':
@@ -90,21 +97,17 @@ class Learner:
 		else:
 			data = np.zeros((n_rows, n_features), np.uint8)
 			
-		y   = np.ones((n_rows)) * -1 #class label (initialize with -1)
 		idx = 0
-		for posdir in dirs:
-			imagenames = idputils.list_images(posdir)
-			for colorpath, depthpath, prefix in imagenames:	
-				colorimage = cv2.imread(colorpath)
-				#preprocessing + feature selection
-				#print 'Reading: ',colorpath
-				vector = self._image_to_featurevector(colorimage)
-				y[idx] = label
-				data[idx,:] = vector
-				#print idx
-				idx += 1
+		imagenames = idputils.list_images(directory)
+		for colorpath, depthpath, prefix in imagenames:	
+			colorimage = cv2.imread(colorpath)
+			#preprocessing + feature selection
+			vector = self._image_to_featurevector(colorimage)
+			data[idx,:] = vector
+			idx += 1
 		
-		print idx
+		print 'X.shape=',data.shape
+		y   = np.ones((n_rows)) * label #class label (initialize with -1)
 		return data,y
 
 	def _image_to_featurevector(self, colorimage):
@@ -151,44 +154,115 @@ class Learner:
 		#Switch to vector
 		vector = grayimage.reshape(grayimage.size)
 		return vector
+
+	def balanced_accuracy(self, y, y_pred):
+		"""Calculates the classification accuracy for unbalanced classes. 
+		The error is the average of errors for each indiviual class. Accuracy = 1 - error"""
+		if y.shape[0] != y_pred.shape[0]:
+			raise ValueError('weighted_error: given arrays have different lengths : %i and %i' % (y.shape[0],y_pred.shape[0]))
+
+		errors = []
+		classes = np.unique(y)
+		for lbl in classes:
+			classpredictions = y_pred[y==lbl]
+			classsize = classpredictions.size
+			misclassified = (classpredictions!=lbl).sum()
+			errors.append(misclassified*1.0/classsize)
+		return 1 - np.average(errors)
 	
-	def train_test(self, clf, title = 'Untitled'):
+	def sample_balanced(self, Xy, classsize = None):
+		"""Returns a sub/over sampled balanced dataset. 
+		For ex. if classsize=500, then 500 instances of each class will be taken from self.data"""
+		np.random.seed(583)
+		y=Xy[:,-1]
+		print y.shape
+		classcount = classsize or min(np.bincount(y))
+		classes = np.unique(y)
+		Xy_sampled = np.zeros((0,Xy.shape[1]))
+		for lbl in classes:
+			Xyclass = Xy[y==lbl]
+			sample_idx = np.random.random_integers(0, Xyclass.shape[0]-1, classcount)
+			Xy_sampled = np.concatenate((Xy_sampled, Xyclass[sample_idx,:]))
+		return Xy_sampled
 		
-		X,y = self.data[:,:-1], self.data[:,-1] #separate last column to a vector y
-		#Learn and predict
-		SEED = 583
-		k = 1
-		skfold = cross_validation.StratifiedShuffleSplit(y, n_iter=k, test_size = 0.3, random_state = SEED)
-		avg_test_accuracy = 0
-		avg_train_accuracy = 0
-		for i, d in enumerate(skfold):
-			train_index, test_index = d
-			X_train,X_test = X[train_index], X[test_index]
-			y_train,y_test = y[train_index], y[test_index]
+	def test(self, X_test=None, y_test=None, frompickle=None):
+		if frompickle:
+			data = pickle.load(open(frompickle,'r'))
+			X_test, y_test = data[:,:-1], data[:,-1]
+		y_predicttest = self.clf.predict(X_test)
+		test_accuracy  = self.balanced_accuracy(y_test, y_predicttest)
+		print classification_report(y_test, y_predicttest, target_names=['Barrel','Blue','Brown','Non-object'])
+		print confusion_matrix(y_test, y_predicttest)
+		print 'Test accuracy: ', test_accuracy	
+		return test_accuracy
+	
+	def train_test(self, clf, title = 'Untitled', test_size = 0.3, presample_class_size = None):
+		
+		data = self.data
+		if presample_class_size: #subsample with balanced class proportions
+			data = self.sample_balanced(self.data, presample_class_size)
 			
-			clf.fit(X_train,y_train)
-			y_predicttrain = clf.predict(X_train)
-			accuracy = metrics.accuracy_score(y_train, y_predicttrain)#f1_score(y_train, y_predicttrain)
-			avg_train_accuracy += accuracy
-			#print '\t\t\t\tTrain accuracy: ', accuracy
-			y_predicttest = clf.predict(X_test)
-			
-			self.clf = clf
-			
-			accuracy = metrics.metrics.accuracy_score(y_test, y_predicttest)#f1_score(y_test, y_predicttest)
-			#idputils.plot_prec_recall([y_test], [y_predicttest[:,0]], ['svm'], 'TITLE', 'Pre_Rec_%i'%i)
-			print confusion_matrix(y_test, y_predicttest)
-			#print 'Test accuracy: ', accuracy
-			avg_test_accuracy += accuracy
-			sys.stdout.write('.');sys.stdout.flush()
-			#print 'Parameters:',clf.coef_
-			
-		sys.stdout.write('\n')
-		avg_test_accuracy /= k
-		avg_train_accuracy /= k
-		print title, 'Classifier'
-		print 'Test:',avg_test_accuracy,'    Train:',avg_train_accuracy
-		return y_predicttest
+		X,y = data[:,:-1], data[:,-1] #separate last column to a vector y
+		skfold = cross_validation.StratifiedShuffleSplit(y, n_iter=1, test_size = test_size, random_state = 583)
+		for train_index, test_index in skfold:
+			X_train, X_test, y_train, y_test = X[train_index], X[test_index], y[train_index], y[test_index]
+
+		print '======================'
+		print 'Xtrain shape ',X_train.shape,' --- Xtest', X_test.shape
+		clf.fit(X_train,y_train)
+		self.clf = clf
+		y_predicttrain = clf.predict(X_train)
+		y_predicttest = clf.predict(X_test)	
+		train_accuracy = self.balanced_accuracy(y_train, y_predicttrain)
+		test_accuracy  = self.balanced_accuracy(y_test, y_predicttest)
+		
+		print clf	
+		print classification_report(y_test, y_predicttest, target_names=['Barrel','Blue','Brown','Non-object'])
+		print confusion_matrix(y_test, y_predicttest)
+		print 'Test:', test_accuracy, '    Train:', train_accuracy
+		print '======================'
+		return {'train_accuracy':train_accuracy, 
+			    'test_accuracy':test_accuracy, 
+			    'n_samples_train':X_train.shape[0], 
+			    'n_samples_test':X_test.shape[0]}
+
+# 	def train_test(self, clf, title = 'Untitled'):
+# 		
+# 		X,y = self.data[:,:-1], self.data[:,-1] #separate last column to a vector y
+# 		#Learn and predict
+# 		SEED = 583
+# 		k = 1
+# 		skfold = cross_validation.StratifiedShuffleSplit(y, n_iter=k, test_size = 0.3, random_state = SEED)
+# 		avg_test_accuracy = 0
+# 		avg_train_accuracy = 0
+# 		for i, d in enumerate(skfold):
+# 			train_index, test_index = d
+# 			X_train,X_test = X[train_index], X[test_index]
+# 			y_train,y_test = y[train_index], y[test_index]
+# 
+# 			clf.fit(X_train,y_train)
+# 			y_predicttrain = clf.predict(X_train)
+# 			accuracy = metrics.accuracy_score(y_train, y_predicttrain)#f1_score(y_train, y_predicttrain)
+# 			avg_train_accuracy += accuracy
+# 			#print '\t\t\t\tTrain accuracy: ', accuracy
+# 			y_predicttest = clf.predict(X_test)
+# 			
+# 			self.clf = clf
+# 			
+# 			accuracy = metrics.metrics.accuracy_score(y_test, y_predicttest)#f1_score(y_test, y_predicttest)
+# 			#idputils.plot_prec_recall([y_test], [y_predicttest[:,0]], ['svm'], 'TITLE', 'Pre_Rec_%i'%i)
+# 			print confusion_matrix(y_test, y_predicttest)
+# 			#print 'Test accuracy: ', accuracy
+# 			avg_test_accuracy += accuracy
+# 			sys.stdout.write('.');sys.stdout.flush()
+# 			#print 'Parameters:',clf.coef_
+# 			
+# 		sys.stdout.write('\n')
+# 		avg_test_accuracy /= k
+# 		avg_train_accuracy /= k
+# 		print title, 'Classifier'
+# 		print 'Test:',avg_test_accuracy,'    Train:',avg_train_accuracy
+# 		return y_predicttest
 
 	def predictimg(self, img):
 		"""Use self.clf to predict given img. img could be a path or a numpy array image"""
@@ -213,41 +287,70 @@ class Learner:
 if __name__ == '__main__':
 	import argparse
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-matrix', metavar = 'path/file.pickle', dest='readMatrixPath', help = 'Path to pickle file with a numpy data matrix with last column having labels')
-	parser.add_argument('-p',dest='positive_dirs', nargs='+', help='One or more directories with the positive images.')
-	parser.add_argument('-n', dest='negative_dirs', nargs='+')
+	parser.add_argument('-matrix', metavar = 'path/file.pickle',nargs='+', dest='readMatrixPaths', help = 'Path to pickle file(s) with a numpy data matrix with last column having labels. If more than one file is given, they should have same # of instances, the features from both matrices will be concatenated and used together.')
+	parser.add_argument('-trainsize', dest ='trainsize', default=0.8,type=float, help='Proportion of data to use for training, rest is for testing.Float between 0-1.')
+	parser.add_argument('-d',dest='dirs', nargs='+', help='One or more directories with the images, each dir should contain one class to be classified.')
 	parser.add_argument('-saveonly', metavar = 'path/file.pickle', dest='saveMatrixPath', help='Make the command only read the given images data (with -p and -n), saves it to a matrix and Stop.')
 	parser.add_argument('-feature', dest ='feature', default=None, help='The feature type to extract. Either hog, hue or gray')
 	parser.add_argument('-savemodel', dest='modeloutputfile', default=None, help= 'Path to file to save the classifier model to. If this option is not used, the model will not be saved.')
 	
 	args = parser.parse_args()
-	if args.readMatrixPath and (args.positive_dirs or args.negative_dirs or args.saveMatrixPath or args.feature):
+	if args.readMatrixPaths and (args.dirs or args.saveMatrixPath or args.feature):
 		parser.error("Cannot use --matrix with one of -p,-n,--save-only")
 
 	if not args.feature:
 		args.feature='hog'
 ############################################################################################################################
 	print args.feature
-	if  args.readMatrixPath:
-		learner = Learner(args.feature, datapicklefile= args.readMatrixPath)
+	if  args.readMatrixPaths:
+		learner = Learner(args.feature, datapicklefiles= args.readMatrixPaths)
 	else:
-		learner = Learner(args.feature, positive_dirs = args.positive_dirs, negative_dirs = args.negative_dirs)
+		learner = Learner(args.feature, dirs = args.dirs)
 		learner.read_data_matrix()
 	
+	from sklearn.svm import LinearSVC
+	from sklearn.svm import SVC
+	from sklearn.linear_model import LogisticRegression
+	from sklearn.ensemble import RandomForestClassifier
+	from sklearn.neighbors import NearestCentroid
+	from sklearn.ensemble import AdaBoostClassifier
+	from nolearn.dbn import DBN
+	import nolearn
+	from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
+	from sklearn.cross_validation import train_test_split
+	from collections import namedtuple
 	
+	
+	ModelTune = namedtuple('ModelTune', 'model params')
+	SEED=583
+	classifiers = [
+	#ModelTune(LinearSVC(), {'C':[0.00001, 0.01, 0.0001], 'loss':['hinge'], 'class_weight':['auto']}),
+	#ModelTune(SVC(), {'C':[100000000000000, 0.01, 0.0001], 'kernel':['rbf'],'degree':[2], 'gamma':[5], 'class_weight':['auto'], 'tol':[0.01]}),
+	#ModelTune(LogisticRegression(), {'C':[0.000001],'intercept_scaling':[100000],'class_weight':['auto'],'random_state':[1+SEED]}),
+	ModelTune(RandomForestClassifier(), {'n_jobs':[3],'n_estimators':[20,30,50],'class_weight':['auto'], 'min_samples_split':[20,50],'random_state':[SEED]}),
+	#ModelTune(NearestCentroid(), {}),
+	#ModelTune(AdaBoostClassifier(), {'base_estimator':[SVC(kernel='linear', C=0.00001, class_weight='auto')],'random_state':[SEED],'algorithm':['SAMME']}),
+	#ModelTune(DBN(), {'layer_sizes':[[-1, 20, -1]], 'output_act_funct':[nolearn.dbn.activationFunctions.Sigmoid()]}),
+	]
+
 	if args.saveMatrixPath:
 		learner.pickle_data_matrix(args.saveMatrixPath)
 	else:
-		#while True:
-		#	c = float(input('Select a value for C: '))
-		pass#y_predicttest=learner.train_test(SVC(kernel='linear',  C = 0.001, class_weight='auto'))
+		results = []
+		for classifier in classifiers:
+			#clf = RandomizedSearchCV(classifier.model, classifier.params,n_iter=1, n_jobs=7, cv=2, verbose=5, pre_dispatch='n_jobs')
+			for k in classifier.params: classifier.params[k] = classifier.params[k][0]
+			clf=classifier.model.__class__(**classifier.params)
+			res = learner.train_test(clf,test_size=1-args.trainsize, presample_class_size=None)
+			results.append((clf, res))
 		if args.modeloutputfile:
 			learner.pickle_classifier(args.modeloutputfile)
 	
-	
+		
+
 #For 64x64 images
 # Test accuracy: 0.912198824923
-#y_predicttest=learner.train_test(LinearSVC(loss='l2', C = 0.001))
+#y_predicttest=learner.train_test(LinearSVC(C = 0.001))
 # LinearSVC(loss='l1', C = 0.000005)
 
 # Test accuracy : 0.91957374675

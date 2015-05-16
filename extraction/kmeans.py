@@ -206,10 +206,11 @@ class KmeansExtractor(ObjectExtractor):
 ##############################################################################
 	
 	
-	def _toKmeansMatrix(self, colorimage,depthimage):
+	def _toKmeansMatrix(self, colorimage,depthimage, n_fgpixels):
 		"""Converts colorimage and depth image, into a Kmeans-ready matrix of shape (n_samples,n_features)
 		where n_samples=number of pixels, and n_features=3 color + 3 location=6
-		colorimage is RGB image"""
+		colorimage is RGB image.
+		n_fgpixels : number of foreground values (in desired depth range). This can be derived from images, but will be redundant step so we pass it here."""
 		hsvimage = cv2.cvtColor(colorimage,cv.CV_BGR2HSV)
 		height = hsvimage.shape[0]
 		width = hsvimage.shape[1]
@@ -217,13 +218,13 @@ class KmeansExtractor(ObjectExtractor):
 		#Count number of pixels in the desired depth range, to know the 
 		#size of matrix to allocate
 		#@TODO: SLOW TRICK. 
-		pixels = np.ones((height,width),dtype=np.uint8)
-		pixels[depthimage < self.depth_lo] = 0
-		pixels[depthimage > self.depth_hi] = 0
-		n_points = int(pixels.sum()) # number of non-back/foreground pixels. We want to cluster only those
+		#pixels = np.ones((height,width),dtype=np.uint8)
+		#pixels[depthimage < self.depth_lo] = 0
+		#pixels[depthimage > self.depth_hi] = 0
+		#n_points = int(pixels.sum()) # number of non-back/foreground pixels. We want to cluster only those
 # 		print 'n_points',n_points
 		#Create data matrix
-		data = np.zeros((n_points,4))
+		data = np.zeros((n_fgpixels,4))
 		index = 0
 		#fill it
 		for r in range(height):
@@ -269,16 +270,16 @@ class KmeansExtractor(ObjectExtractor):
 		write_output : if true, the result of kmeans clustering will be written as a grayscale image, and also the end result will be written
 						, which is the color image, with red rectangles drawn around the detected objects
 		"""	
-		colorimage = cv2.imread(colorname)
-		depthimage = cv2.imread(depthname,-1)
+		colorimage = cv2.imread(colorname) if type(colorname)==str else colorname
+		depthimage = cv2.imread(depthname,-1) if type(depthname)==str else depthname
 		scaled_size = (int(640*cfg.PREDICT_AT_SCALE), int(480*cfg.PREDICT_AT_SCALE))
 		colorimage, depthimage = cv2.resize(colorimage, scaled_size) , cv2.resize(depthimage, scaled_size)
-		colorimage,depthimage = self._threshold_depth(colorimage, depthimage)
+		colorimage,depthimage, n_fgpixels = self._threshold_depth(colorimage, depthimage)
 		height = colorimage.shape[0]
 		
 		#data is n_pixels x n_features matrix. Contains only foreground pixels.
 		#Each row in data matrix is (y, x, z, hue)
-		data = self._toKmeansMatrix(colorimage, depthimage) 
+		data = self._toKmeansMatrix(colorimage, depthimage, n_fgpixels) 
 		
 		
 		labels = self._do_clustering(data, n_clusters=4)

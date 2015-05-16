@@ -8,7 +8,9 @@ import time
 import config as cfg
 
 class ObjectExtractor:
-	
+	"""
+	A class to be extended. The subclass should implement a function (_segment()) that segments objects in an image.
+	"""
 	def __init__(self, imagesdir = None, outputdir=None, experiment_name = '', depth_lo = cfg.DEPTH_LO, depth_hi=cfg.DEPTH_HI):
 		self.imagesdir = imagesdir
 		self.outputdir = outputdir
@@ -73,9 +75,13 @@ class ObjectExtractor:
 	def _threshold_depth(self,colorimage, depthimage):
 		"""Masks out the colorimage for pixels with depth out of the desired range defined in
 		self.depth_hi and self.depth_low"""
-		colorimage[depthimage < self.depth_lo] = 0
-		colorimage[depthimage > self.depth_hi] = 0
-		return colorimage,depthimage
+		below_idx = depthimage < self.depth_lo
+		above_idx = depthimage > self.depth_hi
+		colorimage[below_idx] = 0
+		colorimage[above_idx] = 0
+		
+		n_fgpixels = depthimage.size - below_idx.sum() - above_idx.sum() #Number of pixels in desired range / that are not Background
+		return colorimage,depthimage, n_fgpixels
 	
 	def _segment(self, colorname, depthname, prefix):
 		raise NotImplementedError('_segment function must be overriden by subclasses.')
