@@ -21,6 +21,7 @@ from collections import defaultdict
 import idputils
 from argparse import ArgumentParser
 import cv2,cv
+import itertools
 	
 def get_area(box):
 	y1, x1, y2, x2 = box
@@ -51,6 +52,14 @@ def get_box_accuracy(true_box, predicted_box, scale_predicted):
 	best_score = (overlaparea*2.0) / (tarea+parea)
 	return best_score
 
+def get_boxes_accuracy(true_list, predicted_list, scale_predicted):
+	"""Takes a 2 lists, sorted such that box i in list1 is to be matched with box i in list2"""
+	minlen = min(len(true_list),len(predicted_list))
+	total_accuracy = 0
+	for i in xrange(minlen):
+		total_accuracy += get_box_accuracy(true_list[i], predicted_list[i], scale_predicted)
+	return total_accuracy
+
 def get_file_accuracy(filename_true, filename_predicted, scale_predicted, show_false_negatives_from_dir=None):
 	"""Scale predicted: the scale of the image used to predict. If half size was used (320x240) then value should be 0.5
 	show_false_negatives_from_dir: If not None, then function will use the given directory to view images with false negtives highlighted """
@@ -77,31 +86,45 @@ def get_file_accuracy(filename_true, filename_predicted, scale_predicted, show_f
 		predicted_boxes = predicted_objects[prefix]
 		true_boxes      = true_objects[prefix]
 		
-		while len(true_boxes) > 0 and len(predicted_boxes) > 0:
-			max_accuracy = float('-inf')
-			max_tidx = -1
-			max_pidx = -1
-			for t_idx, true_box in enumerate(true_boxes):
-				for p_idx,predicted_box in enumerate(predicted_boxes):
-					acc = get_box_accuracy(true_box, predicted_box, scale_predicted)
-					if acc > max_accuracy:
-						max_accuracy = acc
-						max_tidx = t_idx
-						max_pidx = p_idx
-			
-			count += 1
-			del predicted_boxes[max_pidx]
-			del true_boxes[max_tidx]
-			total_score += max_accuracy
 		
-		false_positive += len(predicted_boxes)
-		false_negative += len(true_boxes)
+## TRY ALL POSSIBLE MATCHINGS.This is about factorial(3)*factorial(3) trials
+		max_accuracy = -1 
+		for perm_predicted in itertools.permutations(predicted_boxes):
+			for perm_true in itertools.permutations(true_boxes):
+				acc = get_boxes_accuracy(perm_true, perm_predicted, scale_predicted)
+				max_accuracy = max(acc, max_accuracy)
+		minlen = min(len(true_boxes),len(predicted_boxes))
+		count += minlen #the number of matched boxes
+		total_score += max_accuracy
+		false_positive += len(predicted_boxes) - minlen #if predicted ones are less than true, then minlen=len(predicted_boxes), and we get 0
+		false_negative += len(true_boxes) - minlen
 		
-		if len(true_boxes) > 0 and show_false_negatives_from_dir: #VIEW FALSE NEGATIVES
-			img = cv2.imread(imgname_by_prefix[prefix])
-			for y1,x1,y2,x2 in true_boxes:
-				idputils.red_rect(img, y1,x1,y2,x2)
-			idputils.imshow(img, 'Check the FALSE NEGATIVES')
+## A bit greedy, try all pairs, take the best, then repeat until no more pairs remaining.
+# 		while len(true_boxes) > 0 and len(predicted_boxes) > 0:
+# 			max_accuracy = float('-inf')
+# 			max_tidx = -1
+# 			max_pidx = -1
+# 			for t_idx, true_box in enumerate(true_boxes):
+# 				for p_idx,predicted_box in enumerate(predicted_boxes):
+# 					acc = get_box_accuracy(true_box, predicted_box, scale_predicted)
+# 					if acc > max_accuracy:
+# 						max_accuracy = acc
+# 						max_tidx = t_idx
+# 						max_pidx = p_idx
+# 			
+# 			count += 1
+# 			del predicted_boxes[max_pidx]
+# 			del true_boxes[max_tidx]
+# 			total_score += max_accuracy
+# 		
+# 		false_positive += len(predicted_boxes)
+# 		false_negative += len(true_boxes)
+# 		
+# 		if len(true_boxes) > 0 and show_false_negatives_from_dir: #VIEW FALSE NEGATIVES
+# 			img = cv2.imread(imgname_by_prefix[prefix])
+# 			for y1,x1,y2,x2 in true_boxes:
+# 				idputils.red_rect(img, y1,x1,y2,x2)
+# 			idputils.imshow(img, 'Check the FALSE NEGATIVES')
 
 	print total_score
 	total_score = total_score*1.0 / count #get average best_score

@@ -8,7 +8,7 @@ from sklearn import metrics
 from sklearn.metrics import confusion_matrix
 import pickle
 from skimage.feature import hog
-from sklearn.metrics.metrics import classification_report
+from sklearn.metrics import classification_report
 
 class Learner:
 	def __init__(self, feature='hog', dirs = None, test_portion = 0.2, image_size = (64,64), datapicklefiles=None):
@@ -76,6 +76,12 @@ class Learner:
 			self.data = self.data.astype('float32') #for some reason, without this line, the matrix ends up being float64.
 		elif self.feature in ['hue', 'gray']:
 			self.data = self.data.astype('uint8')
+		
+		
+		# Divide into train+validation and test datasets
+		nrows = int(0.7 * self.data.shape[0])
+		self.test_data = self.data[nrows:,:]
+		self.data = self.data[:nrows,:]
 		
 		return self.data
 	
@@ -196,13 +202,15 @@ class Learner:
 		print 'Test accuracy: ', test_accuracy	
 		return test_accuracy
 	
+
+		
 	def train_test(self, clf, title = 'Untitled', test_size = 0.3, presample_class_size = None):
 		
 		data = self.data
 		if presample_class_size: #subsample with balanced class proportions
 			data = self.sample_balanced(self.data, presample_class_size)
 			
-		X,y = data[:,:-1], data[:,-1] #separate last column to a vector y
+		X,y = data[:,:-1], data[:,-1].astype(np.uint8) #separate last column to a vector y
 		skfold = cross_validation.StratifiedShuffleSplit(y, n_iter=1, test_size = test_size, random_state = 583)
 		for train_index, test_index in skfold:
 			X_train, X_test, y_train, y_test = X[train_index], X[test_index], y[train_index], y[test_index]
@@ -217,6 +225,8 @@ class Learner:
 		test_accuracy  = self.balanced_accuracy(y_test, y_predicttest)
 		
 		print clf	
+		print y_test.dtype,y_test
+		print y_predicttest.dtype,y_predicttest
 		print classification_report(y_test, y_predicttest, target_names=['Barrel','Blue','Brown','Non-object'])
 		print confusion_matrix(y_test, y_predicttest)
 		print 'Test:', test_accuracy, '    Train:', train_accuracy
@@ -285,23 +295,27 @@ class Learner:
 		
 		
 if __name__ == '__main__':
+	
+	"""
+	python learner.py -matrix /labeled/SETS/06
+	"""
 	import argparse
 	parser = argparse.ArgumentParser()
+	#python learner.py -matrix /labeled/
 	parser.add_argument('-matrix', metavar = 'path/file.pickle',nargs='+', dest='readMatrixPaths', help = 'Path to pickle file(s) with a numpy data matrix with last column having labels. If more than one file is given, they should have same # of instances, the features from both matrices will be concatenated and used together.')
-	parser.add_argument('-trainsize', dest ='trainsize', default=0.8,type=float, help='Proportion of data to use for training, rest is for testing.Float between 0-1.')
+	parser.add_argument('-trainsize', dest ='trainsize', default=0.1,type=float, help='Proportion of data to use for training, rest is for testing.Float between 0-1.')
 	parser.add_argument('-d',dest='dirs', nargs='+', help='One or more directories with the images, each dir should contain one class to be classified.')
-	parser.add_argument('-saveonly', metavar = 'path/file.pickle', dest='saveMatrixPath', help='Make the command only read the given images data (with -p and -n), saves it to a matrix and Stop.')
+	parser.add_argument('-saveonly', metavar = 'path/file.pickle', dest='saveMatrixPath', help='Make the command only read the given images data, saves it to a matrix and Stop.')
 	parser.add_argument('-feature', dest ='feature', default=None, help='The feature type to extract. Either hog, hue or gray')
 	parser.add_argument('-savemodel', dest='modeloutputfile', default=None, help= 'Path to file to save the classifier model to. If this option is not used, the model will not be saved.')
 	
 	args = parser.parse_args()
 	if args.readMatrixPaths and (args.dirs or args.saveMatrixPath or args.feature):
-		parser.error("Cannot use --matrix with one of -p,-n,--save-only")
+		parser.error("Cannot use -matrix with one of -feature,-d,-save-only")
 
 	if not args.feature:
 		args.feature='hog'
 ############################################################################################################################
-	print args.feature
 	if  args.readMatrixPaths:
 		learner = Learner(args.feature, datapicklefiles= args.readMatrixPaths)
 	else:
@@ -310,11 +324,12 @@ if __name__ == '__main__':
 	
 	from sklearn.svm import LinearSVC
 	from sklearn.svm import SVC
+	from sklearn.tree import DecisionTreeClassifier
 	from sklearn.linear_model import LogisticRegression
 	from sklearn.ensemble import RandomForestClassifier
 	from sklearn.neighbors import NearestCentroid
 	from sklearn.ensemble import AdaBoostClassifier
-	from nolearn.dbn import DBN
+	#from nolearn.dbn import DBN
 	import nolearn
 	from sklearn.grid_search import GridSearchCV, RandomizedSearchCV
 	from sklearn.cross_validation import train_test_split
@@ -324,21 +339,22 @@ if __name__ == '__main__':
 	ModelTune = namedtuple('ModelTune', 'model params')
 	SEED=583
 	classifiers = [
-	#ModelTune(LinearSVC(), {'C':[0.00001, 0.01, 0.0001], 'loss':['hinge'], 'class_weight':['auto']}),
-	#ModelTune(SVC(), {'C':[100000000000000, 0.01, 0.0001], 'kernel':['rbf'],'degree':[2], 'gamma':[5], 'class_weight':['auto'], 'tol':[0.01]}),
-	#ModelTune(LogisticRegression(), {'C':[0.000001],'intercept_scaling':[100000],'class_weight':['auto'],'random_state':[1+SEED]}),
-	ModelTune(RandomForestClassifier(), {'n_jobs':[3],'n_estimators':[20,30,50],'class_weight':['auto'], 'min_samples_split':[20,50],'random_state':[SEED]}),
+	#ModelTune(DecisionTreeClassifier(), {'max_depth':[9], 'class_weight':['auto'], 'random_state':[SEED]})
+	#ModelTune(LinearSVC(), {'C':[0.0000001, 0.01, 0.0001], 'loss':['hinge'], 'class_weight':['auto']}),
+	#ModelTune(SVC(), {'C':[0.000001, 0.01, 0.0001], 'kernel':['rbf'],'degree':[2], 'gamma':[5], 'class_weight':['auto'], 'tol':[0.01]}),
+	ModelTune(LogisticRegression(), {'C':[10],'intercept_scaling':[100000],'class_weight':['auto'],'random_state':[SEED]}),
+	#ModelTune(RandomForestClassifier(), {'n_jobs':[6],'n_estimators':[20],'class_weight':['auto'], 'min_samples_split':[160],'random_state':[SEED]}),
 	#ModelTune(NearestCentroid(), {}),
-	#ModelTune(AdaBoostClassifier(), {'base_estimator':[SVC(kernel='linear', C=0.00001, class_weight='auto')],'random_state':[SEED],'algorithm':['SAMME']}),
+	#ModelTune(AdaBoostClassifier(), {'base_estimator':[SVC(kernel='linear', C=0.001, class_weight='auto')],'random_state':[SEED],'algorithm':['SAMME']}),
 	#ModelTune(DBN(), {'layer_sizes':[[-1, 20, -1]], 'output_act_funct':[nolearn.dbn.activationFunctions.Sigmoid()]}),
 	]
-
 	if args.saveMatrixPath:
 		learner.pickle_data_matrix(args.saveMatrixPath)
 	else:
 		results = []
 		for classifier in classifiers:
 			#clf = RandomizedSearchCV(classifier.model, classifier.params,n_iter=1, n_jobs=7, cv=2, verbose=5, pre_dispatch='n_jobs')
+			#print clf
 			for k in classifier.params: classifier.params[k] = classifier.params[k][0]
 			clf=classifier.model.__class__(**classifier.params)
 			res = learner.train_test(clf,test_size=1-args.trainsize, presample_class_size=None)

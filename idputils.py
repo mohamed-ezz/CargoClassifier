@@ -8,6 +8,7 @@ from sklearn.metrics import precision_recall_curve
 import matplotlib.pyplot as plt
 import numpy as np
 import extraction.config as cfg
+from mpl_toolkits.mplot3d import axes3d
 
 def imshow(img,title=''):
 	cv2.imshow(title,img)
@@ -162,10 +163,10 @@ def scatter3d(x,y,z=None,labels=None,colors=None,sample_percentage=None,outputfi
 		print 'Length before sampling:',len(x),' ',len(y), ' ', len(z)
 		if  sample_percentage:
 			count = len(x)
-			zipped = zip(x,y,z,colors) if colors else zip(x,y,z) #build data points instead of lists of x, list of y, list of z
+			zipped = zip(x,y,z,colors) if colors != None else zip(x,y,z) #build data points instead of lists of x, list of y, list of z
 			random.shuffle(zipped)
 			zipped = zipped[:int(count*sample_percentage)] #shuffle and take first tenth of the data
-			if colors:
+			if colors != None:
 				x,y,z,colors = zip(*zipped)
 			else:
 				x,y,z = zip(*zipped)
@@ -178,8 +179,10 @@ def scatter3d(x,y,z=None,labels=None,colors=None,sample_percentage=None,outputfi
 			ax.set_zlabel(labels[2])
 		ax.scatter(x,y,z,color=colors)
 
+	ax.pbaspect=[0.2,0.1,1]
 	plt.axis('equal')
 	if outputfile == None or show:
+		plt.gca().invert_yaxis()
 		plt.show()
 	else:
 		plt.savefig(outputfile)

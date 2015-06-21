@@ -21,7 +21,7 @@ GROW_DIRECTION = {
 			"SHRINK_UP":   np.array([ 0, 0,-1, 0]), #bottom side move up
 			"SHRINK_DOWN": np.array([ 1, 0, 0, 0]), #top side move down
 			}
-STEP_SIZE = 5
+STEP_SIZE = 3
 	
 class KmeansExtractor(ObjectExtractor):
 
@@ -109,7 +109,8 @@ class KmeansExtractor(ObjectExtractor):
 			new_rect3= np.array(rect) + STEP_SIZE*3 * DIRECTION #grow/shrink rect
 			new_rect2= np.array(rect) + STEP_SIZE*2 * DIRECTION #grow/shrink rect
 			new_rect1= np.array(rect) + STEP_SIZE*1 * DIRECTION #grow/shrink rect
-			rects = [ new_rect1, new_rect2, new_rect3]
+			new_rect4= np.array(rect) + STEP_SIZE*4 * DIRECTION #grow/shrink rect
+			rects = [ new_rect1, new_rect2, new_rect3, new_rect4]
 			scores= map(lambda rect: self._region_grow_score(crop(full_image,rect)), rects)
 			max_idx = np.argmax(scores)
 			best_rect = rects[max_idx]
@@ -154,6 +155,7 @@ class KmeansExtractor(ObjectExtractor):
 			best_score = grow(best_rect, image, ["GROW_DOWN"], best_score) or best_score
 			best_score = grow(best_rect, image, ["GROW_UP"], best_score) or best_score
 			
+
 # 			best_score = grow(best_rect, image, ["GROW_LEFT","SHRINK_UP"], best_score) or best_score
 # 			best_score = grow(best_rect, image, ["GROW_LEFT","SHRINK_DOWN"], best_score) or best_score
 # 			best_score = grow(best_rect, image, ["GROW_RIGHT","SHRINK_UP"], best_score) or best_score
@@ -247,7 +249,7 @@ class KmeansExtractor(ObjectExtractor):
 # 		print 'Start Kmeans'
 		model=KMeans(n_clusters=n_clusters, n_init=8, random_state=982)
 		data = sklearn.preprocessing.scale(data) #returns a copy!
-		
+		#data = sklearn.preprocessing.MinMaxScaler().fit_transform(data)
 		#PLOT 3D
 		
 # 		colors = map(str,list(sklearn.preprocessing.MinMaxScaler().fit_transform(data[:,3])))
@@ -261,7 +263,7 @@ class KmeansExtractor(ObjectExtractor):
 		
 		labels = model.fit_predict(data)
 # 		print 'Done Kmeans'
-		return labels
+		return labels, data
 	
 		
 	def _segment(self, colorname, depthname, prefix, output_clustered_image = False, write_output = True):	
@@ -282,12 +284,20 @@ class KmeansExtractor(ObjectExtractor):
 		data = self._toKmeansMatrix(colorimage, depthimage, n_fgpixels) 
 		
 		
-		labels = self._do_clustering(data, n_clusters=4)
+		labels,_ = self._do_clustering(data, n_clusters=4)
 		#distrib = np.bincount(labels)/(1.0*labels.size)
 		#print distrib
 		#Put segmentation result onto image
 		clustered_image = colorimage.copy() #image that will carry cluster numbers
 		#label_to_color = {0:(9,255,255),4:(4,32,0),6:(6,172,57),3:(3,217,29),1:(1,179,140),5:(5,184,230),2:(2,98,217),7:(7,0,170),8:(8,115,191)}
+		
+		# SCATTER PLOT OF DATA MATRIX
+		if False:
+			colors = 200*np.ones((data.shape[0],1,3), dtype=np.uint8);colors[:,0,0] = data[:,3];
+			colors = cv2.cvtColor(colors, cv.CV_HSV2RGB)[:,0,:]/255.
+			idputils.scatter3d(data[:,1],data[:,0],data[:,2],sample_percentage=0.04, labels=['X','Y','Z'],colors=colors)	
+			exit(0)
+		
 		for i in range(data.shape[0]):
 			grayvalue = int((255.0/5)*(labels[i]+1))
 			clustered_image[data[i][0], data[i][1]] = (grayvalue, grayvalue, grayvalue)
@@ -305,20 +315,27 @@ class KmeansExtractor(ObjectExtractor):
 		rects = []
 		for i in range(n_objects):
 			y1,x1,y2,x2, regionscore = self._find_least_variance_box(clustered_image)
-			if regionscore > cfg.MIN_ACCEPTED_OBJECT_SCORE and y1*1.0/height < 0.9: #accept object if it has min score and appears/starts at top 80% 
+			if  regionscore > cfg.MIN_ACCEPTED_OBJECT_SCORE and y1*1.0/height < 0.9: #accept object if it has min score and appears/starts at top 80% 
 				rects.append((y1,x1,y2,x2))
 			clustered_image[y1:y2+1, x1:x2+1] = 0
 			
 	
 		if write_output:
 			for y1,x1,y2,x2 in rects:
+				w = x2-x1; h=y2-y1;
+				#print w,'x',h
 				idputils.red_rect(colorimage, y1,x1,y2,x2)
-				idputils.red_rect(segmentimage_orig, y1,x1,y2,x2)
-				
-			#idputils.imshow(colorimage,'color segment result')
-			#idputils.imshow(segmentimage_orig,'segment result')		
-			self.saveImage(prefix+'_COLOR.bmp', colorimage)
-			self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
+				#idputils.red_rect(segmentimage_orig, y1,x1,y2,x2)
+				pass
+			
+			if True:
+				#segmentimage_orig = cv2.resize(segmentimage_orig, (640,480))
+				segmentimage_orig[:,:,1:]= 255
+				segmentimage_orig = cv2.cvtColor(segmentimage_orig, cv.CV_HSV2BGR) 
+				idputils.imshow(colorimage,'color segment result')
+				idputils.imshow(segmentimage_orig,'segment result')		
+				#self.saveImage(prefix+'_COLOR.bmp', colorimage)
+				#self.saveImage(prefix+'_SEGMENTS.png', segmentimage_orig)
 		
 		return rects
 		
@@ -336,7 +353,7 @@ if __name__ == '__main__':
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-i',dest='input_dir',  help='Input directory', default = '/idpdata/frontal/')
-	parser.add_argument('-o',dest='output_dir', help="Output directory", default='/idpdata/seg_output/kmeans_growth/')
+	parser.add_argument('-o',dest='output_dir', help="Output directory", default='/idpdata/seg_output/kmeans_growth_may19/')
 	parser.add_argument('-l',dest='labeled_csv',help="Path to Labeled segmentation csv",default='/idpdata/frontal/segmentation_labels.csv')
 	args = parser.parse_args()	
 
@@ -351,6 +368,9 @@ if __name__ == '__main__':
 		best_score, fp, fn = segmentation_error.get_file_accuracy(args.labeled_csv, predicted_csv, cfg.PREDICT_AT_SCALE)
 
 	exit(0)
+
+
+
 
 #############
 	import math
@@ -377,7 +397,7 @@ if __name__ == '__main__':
 		best_init = init
 		
 		improved = True
-		while improved:
+		while improved: #if false:stop when no improvement happened in all directions (continues to next init in the outer loop)
 			for direction in [[1,0,0] ,[0,1,0], [0,0,1]]:
 				direction = np.array(direction)
 				new_weights = best_weights + 0.3 * direction
@@ -389,10 +409,11 @@ if __name__ == '__main__':
 					best_weights = new_weights
 					best_init = init
 					print 'New best score:',best_score,'at weights:',best_weights
-					continue
+					continue #No need to try -ve sign direction
 				else:
 					improved = False
 				
+				#Try direction with -ve sign
 				new_weights = best_weights - 0.3 * direction
 				new_score = evaluate(new_weights)
 				sys.stdout.write('#');sys.stdout.flush()
@@ -423,6 +444,7 @@ if __name__ == '__main__':
 
 
 
+#### GRID SEARCH TUNING
 
 #### TUNE SCORE TERM WEIGHTS
 # 	best_weights = (-1,-1,-1)

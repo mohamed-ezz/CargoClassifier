@@ -91,6 +91,8 @@ def affine_main(args):
 	
 
 def perturb(y1,x1,y2,x2):
+	""" Perturb the size of the given rectangle
+	"""
 	#How many sides to perturb?
 	n_sides = np.random.random_integers(1,3)
 
